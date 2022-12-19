@@ -1,0 +1,118 @@
+#!/bin/bash
+print_err(){ # prints the error message when test fails
+	if [ ${1} -ne 0 ] && [ ${2} -ne 0 ]; then
+		printf "Test failed: ${3}\n"
+		printf "Args:\n"
+		cat "${3}.args" 
+		printf "Input:\n"
+		cat "${3}.in"
+		printf "Expected:\n"
+		cat "${3}.in" | ${5} $(cat ${3}.args)
+		printf "Actual:\n"
+		cat "${3}.in" | ${4} $(cat ${3}.args)
+	elif [ ${1} -ne 0 ]; then			
+		printf "Test failed: ${3}\n"
+		printf "Args:\n"
+		cat "${3}.args"
+		printf "Input:\nExpected:\n"
+		${5} $(cat ${3}.args)
+		printf "Actual:\n"
+		${4} $(cat ${3}.args) 
+	elif [ ${2} -ne 0 ]; then	
+		printf "Test failed: ${3}\n"
+		printf "Args:\nInput:\n"
+		cat "${3}.in"
+		printf "Expected:\n"
+		cat "${3}.in" | ${5}
+		printf "Actual:\n"
+		cat "${3}.in" | ${4}
+	else
+		printf "Test failed: ${3}\nArgs:\nInput:\n"
+		printf "Expected:\n"
+		${5}
+		printf "Actual:\n"
+		${4}
+	fi
+	return
+}
+#main function to be called if initial checks are good
+main () {
+	return_code=0
+	touch "empty_file.txt"
+	for t in $(cat $1); do
+		test_res="$(mktemp)"
+		sample_res="$(mktemp)"
+		inp=0
+		argp=0	
+		if [ -f "${t}.args" ]; then
+			# Case 1: if .args file exists
+			if [ -r "${t}.args" ]; then
+				#Case 1a: .args file exist and is readable
+				argp=1
+			else
+				#Case 1b: .args file exist but is not readable
+				printf "${t}.args is not readable.\n" 1>&2
+				return_code=1
+			fi
+		fi
+		if [ -f "${t}.in" ]; then
+			#Case 2: if .args file exists
+			if [ -r "${t}.in" ]; then
+				#Case 2a: .in file exists and is readable
+				inp=1
+			else
+				#Case 2b: .in file exists and is not readable
+				printf "${t}.in is not readable.\n" 1>&2
+				return_code=1
+			fi
+		fi
+		if ! [ -f "${t}.args" ] && ! [ -f "${t}.in" ]; then
+			printf "" # do nothing, this test has no files corresponding to it
+		elif [ $argp -eq 0 ] && ! [ -r "${t}.in" ]; then
+			continue
+		elif [ $inp -eq 0 ] && ! [ -r "${t}.args" ]; then
+			continue
+		fi
+		#if .args and .in file both exist	
+		if [ $argp -ne 0 ] && [ $inp -ne 0 ]; then
+			cat "${t}.in" | ./${2} $(cat ${t}.args) > $test_res
+			cat "${t}.in" | ./${3} $(cat ${t}.args) > $sample_res
+		#if only .args file exists
+		elif [ $argp -ne 0 ]; then
+			./${2} $(cat ${t}.args) > $test_res
+			./${3} $(cat ${t}.args) > $sample_res
+		#if only .in exists
+		elif [ $inp -ne 0 ]; then
+			cat "${t}.in" | ./${2} > $test_res
+			cat "${t}.in" | ./${3} > $sample_res
+		#if none of .args or .in exists
+		else
+			cat "empty_file.txt" | ./${2} > $test_res
+			cat "empty_file.txt" | ./${3} > $sample_res
+		fi
+		if [ -n "$(cmp $sample_res $test_res)" ]; then
+			print_err "${argp}" "${inp}" "${t}" "${2}" "${3}"
+		fi
+
+		rm ${test_res}
+		rm ${sample_res}
+	done
+	exit ${return_code}
+	rm "empty_file.txt"
+}
+# initial checks, if any of these are false they kill the script
+if [ $# -ne 3 ]; then
+	printf "Incorrect number of arguments. Received ${#}, expected 3.\n" 1>&2
+	exit 1
+elif ! [ -r ${1} ]; then
+	printf "Error. ${1} is not readable or does not exist.\n" 1>&2
+	exit 1
+elif ! [ -x ${2} ]; then
+	printf "Error. ${2} is not executable or does not exist.\n" 1>&2
+	exit 1
+elif ! [ -x ${3} ]; then
+	printf "Error. ${3} is not executable or does not exist.\n" 1>&2
+	exit 1
+else
+	main ${1} ${2} ${3}
+fi	
